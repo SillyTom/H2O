@@ -15,15 +15,15 @@ nt =100000
 rt = 1.8
 N_preplasma = 1e15
 frequency0 = 0.2;    
-lt = 5
+lt = 10          # extended time window to show full electron decay
 
 
-taue = 0.6e-12
+taue = 2e-12     # electron attachment time (ps), governs post-pulse decay
 
 
 # E0 = np.array([0.9,2.1,3])
 E0 = np.array([0.9,2.1,3])
-nuc0 = 10e12/0.9*E0
+nuc0 = 10e12/0.9*E0   # initial (room-temperature) collision frequency, field-dependent
 # nuc0 = 10e12*np.ones(len(E0))
 # nuc0 = 1e12*np.array([9.2,26,38.7])
 # nuc0 = 1e12*np.array([9.2,26,138.7])
@@ -31,7 +31,7 @@ nuc0 = 10e12/0.9*E0
 # nuc0
 
 E_O = 12.6; 
-n_O2 = 3e22; 
+n_O2 = 3.34e28/1e6;  # water molecule number density (cm^-3), n_H2O=3.34e28 /m^3 
 
 
 
@@ -142,12 +142,6 @@ T_pl = np.zeros(nt)
 N_e = np.zeros(nt)
 E = np.zeros(nt,dtype=np.complex64)
 
-N_ion_O[0] = N_preplasma*1e6
-
-T_e[0] = 300
-T_pl[0] = 300
-N_e[0] = N_ion_O[0]
-
 
 
 
@@ -164,9 +158,16 @@ for jt in range(nt):
 ve_new = 0
 
 ne_data = np.zeros((nt,3))
-fig, ax = plt.subplots(2,1,figsize=(6,8))
+fig, ax = plt.subplots(1,1,figsize=(6,5))
+
+colors_plot = ['#003070', '#4472C4', '#9DC3E6']
 
 for i in range(3):
+
+    # Reset state arrays for each field strength
+    N_ion_O[:] = 0; nu_c[:] = 0; T_e[:] = 0; T_pl[:] = 0; N_e[:] = 0
+    N_ion_O[0] = N_preplasma*1e6
+    T_e[0] = 300; T_pl[0] = 300; N_e[0] = N_ion_O[0]; nu_c[0] = nuc0[i]
 
 
     for jt in np.arange(1,nt):
@@ -201,21 +202,10 @@ for i in range(3):
         ve = ve_new
         sigma = 5e-22
 
-        # sigma = 0
-        # if Te>2*K_to_ev:
-        #     sigma = pow(10,2-2/3*np.log10(Te*K_to_ev))*1e-20
-        # nu_c[jt] = sigma*ve*n_O2*1e-4
-        # if nu_c[jt]<1e12:
-        #     nu_c[jt] = 1e12
-
-        # nu_c[jt] = np.abs(sigma*np.sqrt(Te*kb*3/emass)*n_O2)
-
-        nu_c[jt] = nuc0[i]
-
-        # ve_new = ve+(echarge*np.abs(np.real(E1))*E0[i]/emass-nu_c[jt-1]*ve)*dt;
-        # nu_c[jt] = sigma*ve_new*n_O2
-        # print(ve_new)
-        # ve_new = ve+(echarge*np.abs(np.real(E1))*E0[i]/emass)*dt;
+        # Temperature-dependent collision frequency (variable nu_c):
+        # nu_c increases with electron temperature, providing self-regulation
+        nu_c_Te = np.abs(sigma*np.sqrt(max(Te,300)*kb*3/emass)*n_O2)
+        nu_c[jt] = max(nu_c_Te, nuc0[i])   # can only grow from field-dependent initial value
 
         # print("")
         sigma_c = echarge*echarge/emass/epsilon0/light*(nu_c[jt]/(omega0*omega0+nu_c[jt]*nu_c[jt]))
@@ -245,23 +235,19 @@ for i in range(3):
         T_pl[jt] = T_pl[jt-1]+dt*cooling2;
 
 
-        if T_e[jt]*K_to_ev<E_O/echarge and N_ion_O[jt-1]>N_preplasma*1e6:
-            N_ion_O[jt] = N_ion_O[jt-1]+dt*adk(np.abs(np.real(E1))*E0[i],I_p_O)*(n_O2-N_ion_O[jt-1])+(vi_O*N_e[jt-1])*dt-N_ion_O[jt-1]/taue*dt
-        else:
-            N_ion_O[jt] = N_ion_O[jt-1]+dt*adk(np.abs(np.real(E1))*E0[i],I_p_O)*(n_O2-N_ion_O[jt-1])+(vi_O*N_e[jt-1])*dt
-        # N_ion_O[jt] = N_ion_O[jt-1]+dt*adk(np.abs(np.real(E1))*E0[i],I_p_O)*(n_O2-N_ion_O[jt-1])+(vi_O*N_e[jt-1])*dt-N_ion_O[jt-1]/taue*dt
+        # Always-active electron attachment/recombination
+        N_ion_O[jt] = N_ion_O[jt-1]+dt*adk(np.abs(np.real(E1))*E0[i],I_p_O)*(n_O2-N_ion_O[jt-1])+(vi_O*N_e[jt-1])*dt-N_ion_O[jt-1]/taue*dt
 
 
         N_ion_O[jt] = np.min([N_ion_O[jt],n_O2]);
 
         N_e[jt] = N_ion_O[jt]
 
-    ne_data[:,i] = N_e/3e6
+    ne_data[:,i] = N_e/1e21
 
-    ax[0].plot(t1,T_e*K_to_ev,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
-    # ax[0].plot(t1,nu_c/1e12,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
-    ax[1].plot(t1,N_e/3e6,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
-    # ax[1].semilogy(t1,N_e/1e6,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
+    ax.plot(t1,N_e/1e21,color=colors_plot[2-i],label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
+    # ax.plot(t1,nu_c/1e12,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
+    # ax.semilogy(t1,N_e/1e21,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
 
 
 
@@ -272,17 +258,13 @@ two_columns = np.column_stack((t1, ne_data))
 # np.savetxt('data.txt',two_columns[::100], fmt='%.2f\t%.2e\t%.2e\t%.2e\t')
 
 
-ax[1].set_ylabel(r'$\rho_e$ (cm$^{-3}$)',fontsize=13)
-ax[0].legend(fontsize=13)
-
-
-
-ax[0].set_ylabel('nuc (THz)',fontsize=13)
-ax[1].legend(fontsize=13)
+ax.set_ylabel(r'$n_f$ ($10^{21}$/m$^3$)',fontsize=13)
+ax.legend(fontsize=13)
 
 plt.subplots_adjust(left=0.16,right=0.9)
 
-ax[1].set_xlabel('t (ps)',fontsize=13)
+ax.set_xlabel('t (ps)',fontsize=13)
 
+plt.savefig('electron_density.png', dpi=150, bbox_inches='tight')
 plt.show()
 
