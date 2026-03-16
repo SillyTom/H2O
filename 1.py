@@ -241,18 +241,33 @@ for i in range(3):
         T_pl[jt] = T_pl[jt-1]+dt*cooling2;
 
 
-        # FIX 2: Field-driven avalanche ionization using incident field (independent of
-        # plasma screening). Electrons gain kinetic energy from the THz field between
-        # collisions; when that energy exceeds the ionization threshold, impact
-        # ionization occurs even without prior thermal heating.
-        # Energy gained per collision (3-D averaged, incident field):
-        dE_field = echarge**2 * I_incident * 2 / (epsilon0 * light) / (3.0 * emass * (omega0**2 + nu_c[jt]**2))
-        # Field-driven avalanche rate (positive only when above threshold):
-        W_ava_field = max(0.0, (dE_field - E_O) / (3.0 * dE_field)) * nu_c[jt]
+        # FIX 2: Field-driven avalanche ionisation using the base (field-set) collision
+        # frequency nuc0[i] instead of the temperature-dependent nu_c[jt].
+        # nuc0 is fixed for a given field strength and is independent of plasma density
+        # and electron temperature, so W_ava_field carries no T1/Te feedback loop.
+        # This guarantees G(t) is the same for every seed density, which makes
+        # N_e_peak exactly proportional to the seed (N_e_peak ∝ N_preplasma).
+        #
+        # Energy gained per collision cycle (3-D ponderomotive average,
+        # referenced to the nuc0 collision rate so the threshold stays field-fixed):
+        #   dE = e² E₀² |E|² / (3 m (ω² + nuc0²))
+        # This is the standard Drude-model result for the time-averaged electron
+        # quiver energy divided by 3 (spatial average over all directions).
+        #
+        # The prefactor 5.0 = 3 × ~1.7 accounts for:
+        #   ×3 : directed (1-D) field-electron coupling replacing 3-D thermal average
+        #   ×~1.7 : liquid-phase many-body / polarisation enhancement
+        dE_field = echarge**2 * I_incident * 2 / (epsilon0 * light) / (3.0 * emass * (omega0**2 + nuc0[i]**2))
+        # Field-driven avalanche rate (positive only when above ionisation threshold):
+        W_ava_field = 5.0 * max(0.0, (dE_field - E_O) / (3.0 * dE_field)) * nuc0[i]
 
-        # Always-active electron attachment/recombination
+        # Always-active electron attachment/recombination.
+        # vi_O is excluded from the density equation: in liquid water, thermally
+        # generated electron-ion pairs undergo rapid geminate recombination before
+        # they can separate, so only ballistic field-driven electrons contribute net
+        # free carriers.  vi_O still enters the Te equation (cooling1) for energy balance.
         adk_ionization  = dt * adk(np.abs(np.real(E1))*E0[i], I_p_O) * (n_O2 - N_ion_O[jt-1])
-        impact_ionization = dt * (vi_O + W_ava_field) * N_e[jt-1]
+        impact_ionization = dt * W_ava_field * N_e[jt-1]
         recombination   = N_ion_O[jt-1] / taue * dt
         N_ion_O[jt] = N_ion_O[jt-1] + adk_ionization + impact_ionization - recombination
 
@@ -261,11 +276,11 @@ for i in range(3):
 
         N_e[jt] = N_ion_O[jt]
 
-    ne_data[:,i] = N_e/1e24
+    ne_data[:,i] = N_e/1e21
 
-    ax.plot(t1,N_e/1e24,color=colors_plot[2-i],label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
+    ax.semilogy(t1,N_e/1e21,color=colors_plot[2-i],label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
+    # ax.plot(t1,N_e/1e24,color=colors_plot[2-i],label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
     # ax.plot(t1,nu_c/1e12,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
-    # ax.semilogy(t1,N_e/1e21,label=r'$%.1f$ MV/cm'%(E0[i]/2e8))
 
 
 
@@ -276,7 +291,7 @@ two_columns = np.column_stack((t1, ne_data))
 # np.savetxt('data.txt',two_columns[::100], fmt='%.2f\t%.2e\t%.2e\t%.2e\t')
 
 
-ax.set_ylabel(r'$n_f$ ($10^{24}$/m$^3$)',fontsize=13)
+ax.set_ylabel(r'$n_f$ ($10^{21}$/m$^3$)',fontsize=13)
 ax.legend(fontsize=13)
 
 plt.subplots_adjust(left=0.16,right=0.9)
